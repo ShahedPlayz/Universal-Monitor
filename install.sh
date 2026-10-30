@@ -34,8 +34,6 @@ info() { echo -e "${CYAN}[ .. ]${RESET} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 fail() { echo -e "${RED}[FAIL]${RESET} $*"; }
 
-banner
-
 if [ "$(id -u)" -eq 0 ]; then
   ROOT_MODE=1
   DEFAULT_DIR="/opt/universal-monitor"
