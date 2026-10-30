@@ -176,12 +176,39 @@ install_node() {
       *) warn "Could not install btop automatically" ;;
     esac
   fi
-  # use api-installer embedded agent
-  if [ -f "$INSTALL_DIR/api-installer.sh" ]; then
-    bash "$INSTALL_DIR/api-installer.sh"
-    return
+  if [ ! -f "$INSTALL_DIR/um-node.py" ]; then
+    fail "um-node.py not found after download"
   fi
-  fail "um-node.py not found after download"
+  mkdir -p "$INSTALL_DIR/nodes"
+  rm -f "$INSTALL_DIR"/nodes/um-*.json "$INSTALL_DIR"/nodes/*.runtime.json
+  "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" create --name "$(hostname)" --host 0.0.0.0 --port 0 >/tmp/um-node-create.json
+  NODE_ID="$("$PYTHON_BIN" -c 'import json; print(json.load(open("/tmp/um-node-create.json"))["id"])')"
+  ok "Created node config: $NODE_ID"
+  # pm2
+  if ! command -v pm2 >/dev/null 2>&1; then
+    info "Installing pm2..."
+    if [ -n "$PKG_MGR" ]; then
+      case "$PKG_MGR" in
+        apt-get) apt-get update -qq && apt-get install -y -qq nodejs npm ;;
+        dnf) dnf install -y nodejs npm ;;
+        yum) yum install -y nodejs npm ;;
+        apk) apk add --no-cache nodejs npm ;;
+        brew) brew install node ;;
+      esac
+    fi
+    npm install -g pm2 || true
+  fi
+  local cfg
+  cfg="$(ls "$INSTALL_DIR"/nodes/um-*.json | head -1)"
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete um-node >/dev/null 2>&1 || true
+    pm2 start "$PYTHON_BIN" --name um-node --cwd "$INSTALL_DIR" --interpreter none -- "$INSTALL_DIR/um-node.py" run --config "$cfg"
+    pm2 save >/dev/null 2>&1 || true
+  else
+    nohup "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" run --config "$cfg" >/tmp/um-node.log 2>&1 &
+  fi
+  ok "Node installed"
+  node_status
 }
 
 install_web() {
