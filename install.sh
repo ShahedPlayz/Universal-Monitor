@@ -15,7 +15,10 @@ ARCHIVE_URL="https://github.com/ShahedPlayz/Universal-Monitor/archive/refs/heads
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
 MAGENTA='\033[0;35m'; CYAN='\033[0;36m'; WHITE='\033[1;37m'; BOLD='\033[1m'; RESET='\033[0m'
 
+clear_screen() { printf '\033[2J\033[H'; }
+
 banner() {
+  clear_screen
   echo -e "${CYAN}${BOLD}"
   cat <<'BANNER'
   ███████╗ ██████╗ ███╗   ███╗
@@ -62,29 +65,22 @@ if command -v python3 >/dev/null 2>&1; then PYTHON_BIN="$(command -v python3)"
 elif command -v python >/dev/null 2>&1; then PYTHON_BIN="$(command -v python)"
 fi
 
-echo -e "${WHITE}Environment:${RESET} $OS_NAME ($OS_KIND)"
-echo -e "${WHITE}Package mgr:${RESET} ${PKG_MGR:-none}"
-echo -e "${WHITE}Python:${RESET} ${PYTHON_BIN:-none}"
-echo -e "${WHITE}Install dir:${RESET} $INSTALL_DIR"
-echo
-
-# download project if needed
-if [ ! -f "${INSTALL_DIR}/um-node.py" ]; then
-  info "Downloading Universal Monitor into $INSTALL_DIR ..."
-  mkdir -p "$INSTALL_DIR"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$ARCHIVE_URL" -o /tmp/um-monitor.tar.gz
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO /tmp/um-monitor.tar.gz "$ARCHIVE_URL"
-  else
-    fail "curl or wget is required"
+download_project() {
+  if [ ! -f "${INSTALL_DIR}/um-node.py" ] || [ ! -f "${INSTALL_DIR}/website/app.py" ]; then
+    info "Downloading Universal Monitor into $INSTALL_DIR ..."
+    mkdir -p "$INSTALL_DIR"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "$ARCHIVE_URL" -o /tmp/um-monitor.tar.gz
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO /tmp/um-monitor.tar.gz "$ARCHIVE_URL"
+    else
+      fail "curl or wget is required"
+    fi
+    tar -xzf /tmp/um-monitor.tar.gz -C "$INSTALL_DIR" --strip-components=1
+    rm -f /tmp/um-monitor.tar.gz
+    ok "Downloaded"
   fi
-  tar -xzf /tmp/um-monitor.tar.gz -C "$INSTALL_DIR" --strip-components=1
-  rm -f /tmp/um-monitor.tar.gz
-  ok "Downloaded"
-fi
-
-cd "$INSTALL_DIR"
+}
 
 gpu_info() {
   if [ "$OS_KIND" = "linux" ]; then
@@ -157,7 +153,7 @@ install_node() {
     warn "Node agent requires Linux (uses /proc). Skipping on $OS_KIND."
     return
   fi
-  # check existing
+  download_project
   if ls "$INSTALL_DIR"/nodes/um-*.json >/dev/null 2>&1 || [ -f "$INSTALL_DIR/um-node.py" ]; then
     echo -e "${YELLOW}Existing node files/config found.${RESET}"
     read -r -p "Proceed with fresh install? [y/N]: " ans
@@ -167,6 +163,7 @@ install_node() {
   pm2 delete um-node >/dev/null 2>&1 || true
   rm -f "$INSTALL_DIR"/nodes/um-*.json "$INSTALL_DIR"/nodes/*.runtime.json
   rm -f "$INSTALL_DIR/um-node.py"
+  download_project
   # install btop
   if ! command -v btop >/dev/null 2>&1; then
     info "Installing btop..."
@@ -214,7 +211,14 @@ install_node() {
   node_status
 }
 
+uninstall_node() {
+  pm2 delete um-node >/dev/null 2>&1 || true
+  rm -f "$INSTALL_DIR"/nodes/um-*.json "$INSTALL_DIR"/nodes/*.runtime.json
+  ok "Node uninstalled"
+}
+
 install_web() {
+  download_project
   if ls "$INSTALL_DIR/website" >/dev/null 2>&1; then
     echo -e "${YELLOW}Existing web files found.${RESET}"
     read -r -p "Proceed with fresh install? [y/N]: " ans
@@ -235,23 +239,63 @@ install_web() {
   web_status
 }
 
+uninstall_web() {
+  pm2 delete um-web >/dev/null 2>&1 || true
+  ok "Web uninstalled"
+}
+
+node_menu() {
+  while true; do
+    clear_screen
+    banner
+    echo "  [1] Install Node"
+    echo "  [2] Uninstall Node"
+    echo "  [3] Back"
+    echo
+    read -r -p "Select option: " c
+    case "$c" in
+      1) install_node; read -r -p "Press Enter..." _ ;;
+      2) uninstall_node; read -r -p "Press Enter..." _ ;;
+      3) return ;;
+      *) warn "Invalid option" ;;
+    esac
+  done
+}
+
+web_menu() {
+  while true; do
+    clear_screen
+    banner
+    echo "  [1] Install Web"
+    echo "  [2] Uninstall Web"
+    echo "  [3] Back"
+    echo
+    read -r -p "Select option: " c
+    case "$c" in
+      1) install_web; read -r -p "Press Enter..." _ ;;
+      2) uninstall_web; read -r -p "Press Enter..." _ ;;
+      3) return ;;
+      *) warn "Invalid option" ;;
+    esac
+  done
+}
+
 while true; do
+  clear_screen
   banner
-  echo "  [1] Install Node"
-  echo "  [2] Install Web"
+  echo "  [1] Node"
+  echo "  [2] Web"
   echo "  [3] Status Web"
   echo "  [4] Status Node"
   echo "  [5] Exit"
   echo
   read -r -p "Select option: " choice
   case "$choice" in
-    1) install_node ;;
-    2) install_web ;;
-    3) web_status ;;
-    4) node_status ;;
+    1) node_menu ;;
+    2) web_menu ;;
+    3) clear_screen; banner; web_status; read -r -p "Press Enter..." _ ;;
+    4) clear_screen; banner; node_status; read -r -p "Press Enter..." _ ;;
     5) echo "Goodbye."; exit 0 ;;
-    *) warn "Invalid option" ;;
+    *) warn "Invalid option"; sleep 1 ;;
   esac
-  echo
-  read -r -p "Press Enter to continue..." _
 done
