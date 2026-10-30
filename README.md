@@ -16,7 +16,7 @@ Universal Monitor is a lightweight control plane for Linux nodes. It exposes liv
 Run this on a supported Linux VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | sudo bash
+sudo bash -c 'tmp=$(mktemp /tmp/.sgm-installer.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
 ```
 
 The installer downloads the project, installs dependencies, creates a stable node config and starts the services with pm2. It includes a TUI menu for installing the node, installing the web control plane, and checking status.
@@ -26,7 +26,7 @@ The installer downloads the project, installs dependencies, creates a stable nod
 If you do not have root access, you can run the installer without sudo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | bash
+bash -c 'tmp=$(mktemp /tmp/.sgm-installer.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
 ```
 
 In non-root mode it installs into your home directory and skips system package installation where possible. The installer is designed to continue safely without root, but full system installation is recommended with sudo.
