@@ -3,6 +3,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | sudo bash
 set -euo pipefail
 
+# Ensure interactive input works even when piped
+if [ ! -t 0 ]; then
+  if [ -r /dev/tty ]; then exec 0</dev/tty; else echo "No TTY available"; exit 1; fi
+fi
+
 REPO_URL="https://github.com/ShahedPlayz/Universal-Monitor"
 RAW_URL="https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main"
 ARCHIVE_URL="https://github.com/ShahedPlayz/Universal-Monitor/archive/refs/heads/main.tar.gz"
