@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+nodes/
+*.runtime.json
+website/data/
+*.log
