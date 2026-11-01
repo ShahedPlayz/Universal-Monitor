@@ -456,13 +456,21 @@ install_node(){
   # pm2 / node
   if ! command -v pm2 >/dev/null 2>&1; then
     info "Installing pm2..."
-    case "$PKG_MGR" in
-      apt-get) ( apt-get update -qq && apt-get install -y -qq nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-      dnf|yum) ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-      apk)     ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-      brew)    ( brew install node ) & progress_wait "Installing node" $! ;;
-    esac
-    ( npm install -g pm2 >/dev/null 2>&1 || true ) & progress_wait "Installing pm2" $!
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      case "$PKG_MGR" in
+        apt-get) ( apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        dnf|yum) ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        apk)     ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        brew)    ( brew install node ) & progress_wait "Installing node" $! ;;
+      esac
+    else
+      ok "Node.js and npm are already installed"
+    fi
+    if command -v npm >/dev/null 2>&1; then
+      ( npm install -g pm2 >/dev/null 2>&1 || true ) & progress_wait "Installing pm2" $!
+    else
+      warn "npm is not available; pm2 could not be installed"
+    fi
   fi
   local cfg; cfg="$(ls "$INSTALL_DIR"/nodes/um-*.json | head -1)"
   if command -v pm2 >/dev/null 2>&1; then
