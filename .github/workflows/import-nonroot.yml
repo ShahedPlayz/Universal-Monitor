@@ -1,0 +1,41 @@
+name: Import no-root installer
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-nonroot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import installer and guard root installer
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://tmpfiles.org/dl/1793503120.66e49e6f16952ea6/w9AVTJ40s0qA/nonroot.tgz" -o /tmp/nonroot.tgz
+          tar -xzf /tmp/nonroot.tgz -C .
+          chmod +x install-nonroot.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('install.sh')
+          s = p.read_text()
+          guard = '''if [ "$(id -u)" -ne 0 ]; then
+            echo "This installer requires root. For a no-root install, use:" >&2
+            echo "  curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install-nonroot.sh | bash" >&2
+            exit 1
+          fi
+          '''
+          if 'This installer requires root' not in s:
+              s = s.replace('set -euo pipefail\n', 'set -euo pipefail\n\n' + guard, 1)
+              p.write_text(s)
+          PY
+          rm -f .github/workflows/import-nonroot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add install-nonroot.sh install.sh .github/workflows/import-nonroot.yml
+          git commit -m "Add dedicated no-root installer"
+          git push
