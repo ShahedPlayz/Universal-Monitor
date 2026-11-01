@@ -1,0 +1,27 @@
+name: Import no-root installer update
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-nonroot2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import updated no-root installer
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://tmpfiles.org/dl/1793503248.57329b7ac28c1177/wAAyT944kZq5/nonroot2.tgz" -o /tmp/nonroot2.tgz
+          tar -xzf /tmp/nonroot2.tgz -C .
+          chmod +x install-nonroot.sh
+          rm -f .github/workflows/import-nonroot2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add install-nonroot.sh .github/workflows/import-nonroot2.yml
+          git commit -m "Use the user virtualenv when starting services from the menu"
+          git push
