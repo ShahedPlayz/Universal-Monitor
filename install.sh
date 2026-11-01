@@ -560,7 +560,7 @@ main_menu(){
     printf "  %b[3]%b  %bStatus Web%b     %bShow web service status%b\n" "$UI_ACCENT" "$NC" "$UI_TEXT" "$NC" "$UI_MUTED" "$NC"
     printf "  %b[4]%b  %bStatus Node%b    %bShow node agent status%b\n"  "$UI_ACCENT" "$NC" "$UI_TEXT" "$NC" "$UI_MUTED" "$NC"
     printf "  %b[0]%b  %bExit%b\n\n" "$UI_MUTED" "$NC" "$UI_TEXT" "$NC"
-    local choice=""; read_line choice "  ❯ Select option %b[0-4]%b: "
+    local choice=""; read_line choice "  ❯ Select option [0-4]: "
     case "$choice" in
       1) node_menu ;;
       2) web_menu ;;
