@@ -1987,32 +1987,65 @@
   async function runPowerAction(node, action, submit) {
     const isReboot = action === "reboot";
     const token = isReboot ? "REBOOT" : "SHUTDOWN";
+
+    const setModalBody = (html) => {
+      const body = document.getElementById("power-modal-body");
+      if (body) body.innerHTML = html;
+    };
+
+    openModal(`
+      <div class="modal-head">
+        <div class="modal-icon danger">${icon(isReboot ? "rotate" : "power", 21)}</div>
+        <div style="flex:1">
+          <h2 class="modal-title">${isReboot ? "Reboot" : "Shut down"} ${escapeHtml(node.name)}</h2>
+          <p class="modal-sub">Please wait while the agent is asked what this VPS can do.</p>
+        </div>
+        <button class="modal-close" type="button" data-close aria-label="Close">${icon("x", 16)}</button>
+      </div>
+      <div class="modal-body" style="text-align:center" id="power-modal-body">
+        <div class="power-spinner"><span class="spin" style="display:inline-flex">${icon("refresh", 34)}</span></div>
+        <h3 id="power-status-text">Checking support…</h3>
+        <p class="page-sub" id="power-status-sub">Asking the agent for its power capabilities.</p>
+      </div>`);
+
+    if (submit) setButtonLoading(submit, "Checking…");
+
     let power = node.power || {};
     try {
       const pdata = await api(`/api/nodes/${encodeURIComponent(node.id)}/power`);
       power = pdata.power || power;
       node.power = power;
-    } catch (e) {}
+    } catch (error) {
+      const text = document.getElementById("power-status-text");
+      const sub = document.getElementById("power-status-sub");
+      if (text) text.textContent = "Unavailable";
+      if (sub) sub.textContent = error.message;
+      if (submit) restoreButton(submit);
+      setTimeout(closeModal, 2200);
+      return;
+    }
+
     const supported = isReboot ? !!power.reboot : !!power.shutdown;
     if (!supported) {
       const reason = power.reason || "This VPS does not support this power action.";
-      openModal(`
-        <div class="modal-head">
-          <div class="modal-icon danger">${icon("x", 21)}</div>
-          <div style="flex:1">
-            <h2 class="modal-title">Not supported</h2>
-            <p class="modal-sub">${escapeHtml(reason)}</p>
-          </div>
-          <button class="modal-close" type="button" data-close aria-label="Close">${icon("x", 16)}</button>
-        </div>
-        <div class="modal-body" style="text-align:center">
-          <div style="font-size:44px;line-height:1;color:var(--danger);animation:powerFail .45s ease">✕</div>
-          <h3 style="margin:12px 0 6px">${isReboot ? "Reboot unavailable" : "Shutdown unavailable"}</h3>
-          <p class="page-sub">${escapeHtml(isReboot ? "This VPS does not support reboot." : "This VPS does not support shutdown.")}</p>
-        </div>`);
-      setTimeout(closeModal, 2800);
+      setModalBody(`
+        <div class="power-fail">${icon("x", 46)}</div>
+        <h3 style="margin:12px 0 6px">${isReboot ? "Reboot unavailable" : "Shutdown unavailable"}</h3>
+        <p class="page-sub">${escapeHtml(reason)}</p>
+        <p class="page-sub">${escapeHtml(isReboot ? "This VPS does not support reboot." : "This VPS does not support shutdown.")}</p>`);
+      if (submit) restoreButton(submit);
+      setTimeout(closeModal, 3000);
       return;
     }
+
+    const statusText = document.getElementById("power-status-text");
+    const statusSub = document.getElementById("power-status-sub");
+    if (statusText) statusText.textContent = isReboot ? "Sending reboot command…" : "Sending shutdown command…";
+    if (statusSub) statusSub.textContent = isReboot ? "Waiting for the node to go offline." : "Waiting for the node to stop responding.";
+    setModalBody(`
+      <div class="power-spinner"><span class="spin" style="display:inline-flex">${icon("refresh", 34)}</span></div>
+      <h3 id="power-status-text">${isReboot ? "Sending reboot command…" : "Sending shutdown command…"}</h3>
+      <p class="page-sub" id="power-status-sub">${isReboot ? "Waiting for the node to go offline." : "Waiting for the node to stop responding."}</p>`);
 
     let previousBootId = null;
     try {
@@ -2020,37 +2053,25 @@
       previousBootId = pdata.boot_id || null;
     } catch (e) {}
 
-    openModal(`
-      <div class="modal-head">
-        <div class="modal-icon danger">${icon(isReboot ? "rotate" : "power", 21)}</div>
-        <div style="flex:1">
-          <h2 class="modal-title">${isReboot ? "Rebooting" : "Shutting down"} ${escapeHtml(node.name)}</h2>
-          <p class="modal-sub">Please wait while the node responds.</p>
-        </div>
-      </div>
-      <div class="modal-body" style="text-align:center">
-        <div class="power-spinner"><span class="spin" style="display:inline-flex">${icon("refresh", 30)}</span></div>
-        <h3 id="power-status-text" style="margin:12px 0 6px">${isReboot ? "Sending reboot command…" : "Sending shutdown command…"}</h3>
-        <p class="page-sub" id="power-status-sub">${isReboot ? "Waiting for the node to come back online." : "Waiting for the node to stop responding."}</p>
-      </div>`);
-    if (submit) setButtonLoading(submit, isReboot ? "Rebooting…" : "Shutting down…");
-
     try {
       await api(`/api/nodes/${encodeURIComponent(node.id)}/control`, {
         method: "POST",
         body: JSON.stringify({ action, confirm: token }),
       });
     } catch (error) {
-      const text = document.getElementById("power-status-text");
-      if (text) text.textContent = "Failed";
-      toast(error.message, "error");
-      setTimeout(closeModal, 2000);
+      setModalBody(`
+        <div class="power-fail">${icon("x", 46)}</div>
+        <h3 style="margin:12px 0 6px">Failed</h3>
+        <p class="page-sub">${escapeHtml(error.message)}</p>`);
       if (submit) restoreButton(submit);
+      setTimeout(closeModal, 2200);
       return;
     }
 
-    const statusText = document.getElementById("power-status-text");
-    if (statusText) statusText.textContent = isReboot ? "Rebooting…" : "Shutting down…";
+    const afterSendText = document.getElementById("power-status-text");
+    const afterSendSub = document.getElementById("power-status-sub");
+    if (afterSendText) afterSendText.textContent = isReboot ? "Rebooting…" : "Shutting down…";
+    if (afterSendSub) afterSendSub.textContent = isReboot ? "Waiting for the node to come back online." : "Waiting for the node to stop responding.";
     node.last_status = "offline";
     updateNodeStatuses([{ ...node }]);
 
@@ -2059,23 +2080,25 @@
     let seenOffline = false;
 
     const finishSuccess = (message) => {
-      const text = document.getElementById("power-status-text");
-      const sub = document.getElementById("power-status-sub");
-      if (text) text.textContent = message;
-      if (sub) sub.textContent = isReboot ? "The node came back to life." : "The node stopped responding.";
+      setModalBody(`
+        <div class="power-success">${icon("check", 48)}</div>
+        <h3 style="margin:12px 0 6px">${message}</h3>
+        <p class="page-sub">${isReboot ? "The node came back to life." : "The node stopped responding."}</p>`);
       toast(`${node.name}: ${isReboot ? "successfully rebooted and came back to life" : "shut down"}`, "ok");
       node.last_status = isReboot ? "online" : "offline";
       updateNodeStatuses([{ ...node }]);
-      setTimeout(closeModal, 2400);
+      setTimeout(closeModal, 2600);
       if (submit) restoreButton(submit);
     };
 
     const poll = async () => {
       if (Date.now() - started > timeoutMs) {
-        const text = document.getElementById("power-status-text");
-        if (text) text.textContent = "Timed out";
+        setModalBody(`
+          <div class="power-fail">${icon("x", 46)}</div>
+          <h3 style="margin:12px 0 6px">Timed out</h3>
+          <p class="page-sub">${escapeHtml(isReboot ? "The node did not come back online." : "The node did not stop responding.")}</p>`);
         toast(`${node.name}: ${action} timed out`, "error");
-        setTimeout(closeModal, 2000);
+        setTimeout(closeModal, 2200);
         if (submit) restoreButton(submit);
         return;
       }
@@ -2113,10 +2136,6 @@
 
     setTimeout(poll, isReboot ? 2000 : 1000);
   }
-
-  // ------------------------------------------------------------------------
-  // btop
-  // ------------------------------------------------------------------------
 
   function renderBtopPage(node) {
     renderShell({ active: "btop", node, viewLabel: "BTOP++", showLive: true });

@@ -879,3 +879,11 @@ body.compact .page-head { margin-bottom: 14px; }
 body.compact .node-card { padding: 14px; }
 body.compact .chart-canvas-wrap { height: 112px; }
 @keyframes powerFail { from { transform: scale(.35) rotate(-18deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.power-spinner { display: grid; place-items: center; min-height: 52px; margin: 0 0 10px; }
+.power-spinner .spin { color: var(--accent-2); }
+.power-success, .power-fail { display: grid; place-items: center; min-height: 56px; margin: 0 0 10px; }
+.power-success { color: var(--ok); animation: powerSuccess .42s cubic-bezier(.2, .9, .25, 1.2); }
+.power-fail { color: var(--danger); animation: powerFail .42s cubic-bezier(.2, .9, .25, 1.2); }
+@keyframes powerSuccess { from { transform: scale(.25) rotate(-18deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes powerFail { from { transform: scale(.25) rotate(18deg); opacity: 0; } to { transform: none; opacity: 1; } }
