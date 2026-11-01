@@ -365,6 +365,16 @@ download_project(){
   ok "Downloaded"
 }
 
+detect_env(){
+  PY_RUN="$PYTHON_BIN"
+  PYTHONPATH_EXTRA=""
+  if [ -x "$VENV_PY" ] && "$VENV_PY" -c 'import sys' 2>/dev/null; then
+    PY_RUN="$VENV_PY"
+  elif [ -d "$INSTALL_DIR/.pydeps" ]; then
+    PYTHONPATH_EXTRA="$INSTALL_DIR/.pydeps"
+  fi
+}
+
 ensure_env(){
   PY_RUN="$PYTHON_BIN"
   PYTHONPATH_EXTRA=""
@@ -691,4 +701,5 @@ main_menu(){
   done
 }
 
+detect_env
 main_menu
