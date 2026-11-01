@@ -15,25 +15,25 @@ Universal Monitor is a lightweight control plane for Linux nodes. It exposes liv
 - Cross-platform installer TUI with detected machine panel
 - Stable ports and API keys across restarts
 
-## One-line installation
+## Root installation
 
-Run this on a supported Linux VPS:
+Run this on a supported Linux VPS as root:
 
 ```bash
 sudo bash -c 'tmp=$(mktemp /tmp/.sgm-installer.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
 ```
 
-The installer downloads the project, installs dependencies, creates a stable node config and starts the services with pm2. It includes a TUI menu for installing the node, installing the web control plane, and checking status. The main menu also shows the detected machine type, CPU, GPU, RAM and root disk usage.
+The root installer downloads the project, installs system dependencies, creates a stable node config and starts the services with pm2. It includes a TUI menu for installing the node, installing the web control plane, and checking status. The main menu also shows the detected machine type, CPU, GPU, RAM and root disk usage.
 
-### Non-root usage
+## No-root installation
 
-If you do not have root access, you can run the installer without sudo:
+Use the dedicated no-root installer when you do not have sudo access. It never uses `sudo`, `apt`, `dnf`, `yum`, `apk`, `brew` or `pacman`, and installs everything under `~/.universal-monitor`:
 
 ```bash
-bash -c 'tmp=$(mktemp /tmp/.sgm-installer.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
+bash -c 'tmp=$(mktemp /tmp/.sgm-nonroot.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install-nonroot.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
 ```
 
-In non-root mode it installs into your home directory and skips system package installation where possible. The installer is designed to continue safely without root, but full system installation is recommended with sudo.
+The no-root installer creates a user Python virtual environment, installs the web dependencies there, and manages the node and web processes with PID files. It does not install `btop` automatically; install it yourself if you want the BTOP page.
 
 ## License
 
