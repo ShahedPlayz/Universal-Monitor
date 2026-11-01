@@ -950,15 +950,7 @@
         </button>` : ""}
       </div>
 
-      <section class="card" style="margin-top:20px">
-        <div class="card-body" style="display:flex;align-items:flex-start;gap:14px">
-          <div class="empty-icon" style="margin:0;flex:0 0 auto">${icon("shield", 22)}</div>
-          <div>
-            <h3 class="card-title">How nodes connect</h3>
-            <p class="page-sub" style="margin-top:6px">Run <code>python3 um-node.py run</code> on the target machine, then add the printed address and API key here. The agent picks a free port automatically and stores its config in <code>nodes/</code>.</p>
-          </div>
-        </div>
-      </section>`);
+      `);
 
     const add = () => openNodeForm();
     $$("[data-add-node]").forEach((btn) => btn.addEventListener("click", add));
