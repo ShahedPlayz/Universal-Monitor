@@ -470,6 +470,17 @@ start_node(){
   stop_pidfile "$RUN_DIR/um-node.pid" "node"
   mkdir -p "$LOG_DIR" "$RUN_DIR"
   info "Starting node..."
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete um-node >/dev/null 2>&1 || true
+    if [ -n "$PYTHONPATH_EXTRA" ]; then
+      env PYTHONPATH="$PYTHONPATH_EXTRA" pm2 start "$PY_RUN" --name um-node --cwd "$INSTALL_DIR" --interpreter none -- "$INSTALL_DIR/um-node.py" run --config "$cfg" >/dev/null 2>&1
+    else
+      pm2 start "$PY_RUN" --name um-node --cwd "$INSTALL_DIR" --interpreter none -- "$INSTALL_DIR/um-node.py" run --config "$cfg" >/dev/null 2>&1
+    fi
+    pm2 save >/dev/null 2>&1 || true
+    ok "Node started via pm2"
+    return 0
+  fi
   if [ -n "$PYTHONPATH_EXTRA" ]; then
     nohup env PYTHONPATH="$PYTHONPATH_EXTRA" "$PY_RUN" "$INSTALL_DIR/um-node.py" run --config "$cfg" \
       > "$LOG_DIR/um-node.log" 2>&1 &
@@ -494,6 +505,17 @@ start_web(){
   stop_pidfile "$RUN_DIR/um-web.pid" "web"
   mkdir -p "$LOG_DIR" "$RUN_DIR" "$INSTALL_DIR/website/data"
   info "Starting web on port $WEB_PORT..."
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete um-web >/dev/null 2>&1 || true
+    if [ -n "$PYTHONPATH_EXTRA" ]; then
+      ( cd "$INSTALL_DIR/website" && env PYTHONPATH="$PYTHONPATH_EXTRA" UM_WEB_PORT="$WEB_PORT"           pm2 start "$PY_RUN" --name um-web --cwd "$INSTALL_DIR/website" --interpreter none -- app.py >/dev/null 2>&1 )
+    else
+      ( cd "$INSTALL_DIR/website" && env UM_WEB_PORT="$WEB_PORT"           pm2 start "$PY_RUN" --name um-web --cwd "$INSTALL_DIR/website" --interpreter none -- app.py >/dev/null 2>&1 )
+    fi
+    pm2 save >/dev/null 2>&1 || true
+    ok "Web started via pm2"
+    return 0
+  fi
   if [ -n "$PYTHONPATH_EXTRA" ]; then
     ( cd "$INSTALL_DIR/website" && nohup env PYTHONPATH="$PYTHONPATH_EXTRA" UM_WEB_PORT="$WEB_PORT" \
         "$PY_RUN" app.py > "$LOG_DIR/um-web.log" 2>&1 & echo $! > "$RUN_DIR/um-web.pid" )

@@ -422,6 +422,109 @@ web_status(){
   fi
 }
 
+
+# ── service management ───────────────────────────────────────────────────
+systemd_available(){
+  command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
+
+write_systemd_unit(){
+  local name="$1" exec_start="$2" workdir="$3"
+  cat > "/etc/systemd/system/${name}.service" <<EOF
+[Unit]
+Description=Universal Monitor ${name}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${workdir}
+ExecStart=${exec_start}
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+start_node_service(){
+  local cfg="$1"
+  if systemd_available; then
+    write_systemd_unit "um-node" "$PYTHON_BIN $INSTALL_DIR/um-node.py run --config $cfg" "$INSTALL_DIR"
+    if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-node >/dev/null 2>&1; then
+      ok "Node installed as a systemd service"
+      return 0
+    fi
+    warn "systemd failed; falling back to pm2"
+  fi
+  if ! command -v pm2 >/dev/null 2>&1; then
+    info "Installing pm2..."
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      case "$PKG_MGR" in
+        apt-get) ( apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        dnf|yum) ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        apk)     ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        brew)    ( brew install node ) & progress_wait "Installing node" $! ;;
+      esac
+    else
+      ok "Node.js and npm are already installed"
+    fi
+    if command -v npm >/dev/null 2>&1; then
+      ( npm install -g pm2 >/dev/null 2>&1 || true ) & progress_wait "Installing pm2" $!
+    else
+      warn "npm is not available; pm2 could not be installed"
+    fi
+  fi
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete um-node >/dev/null 2>&1 || true
+    pm2 start "$PYTHON_BIN" --name um-node --cwd "$INSTALL_DIR" --interpreter none -- "$INSTALL_DIR/um-node.py" run --config "$cfg"
+    pm2 save >/dev/null 2>&1 || true
+    ok "Node installed via pm2"
+  else
+    ( cd "$INSTALL_DIR" && nohup "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" run --config "$cfg" >/tmp/um-node.log 2>&1 & )
+    ok "Node installed in background"
+  fi
+}
+
+start_web_service(){
+  if systemd_available; then
+    write_systemd_unit "um-web" "$PYTHON_BIN $INSTALL_DIR/website/app.py" "$INSTALL_DIR/website"
+    if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-web >/dev/null 2>&1; then
+      ok "Web installed as a systemd service"
+      return 0
+    fi
+    warn "systemd failed; falling back to pm2"
+  fi
+  if ! command -v pm2 >/dev/null 2>&1; then
+    info "Installing pm2..."
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      case "$PKG_MGR" in
+        apt-get) ( apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        dnf|yum) ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        apk)     ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
+        brew)    ( brew install node ) & progress_wait "Installing node" $! ;;
+      esac
+    else
+      ok "Node.js and npm are already installed"
+    fi
+    if command -v npm >/dev/null 2>&1; then
+      ( npm install -g pm2 >/dev/null 2>&1 || true ) & progress_wait "Installing pm2" $!
+    else
+      warn "npm is not available; pm2 could not be installed"
+    fi
+  fi
+  if command -v pm2 >/dev/null 2>&1; then
+    pm2 delete um-web >/dev/null 2>&1 || true
+    pm2 start "$PYTHON_BIN" --name um-web --cwd "$INSTALL_DIR/website" --interpreter none -- app.py
+    pm2 save >/dev/null 2>&1 || true
+    ok "Web installed via pm2"
+  else
+    ( cd "$INSTALL_DIR/website" && nohup "$PYTHON_BIN" app.py >/tmp/um-web.log 2>&1 & )
+    ok "Web installed in background"
+  fi
+}
+
 # ── node install / uninstall ─────────────────────────────────────────────
 install_node(){
   if [ "$OS_KIND" != "linux" ]; then
@@ -453,33 +556,8 @@ install_node(){
   "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" create --name "$(node_display_name)" --host 0.0.0.0 --port 0 >/tmp/um-node-create.json
   local NODE_ID; NODE_ID="$("$PYTHON_BIN" -c 'import json;print(json.load(open("/tmp/um-node-create.json"))["id"])')"
   ok "Created node config: $NODE_ID"
-  # pm2 / node
-  if ! command -v pm2 >/dev/null 2>&1; then
-    info "Installing pm2..."
-    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-      case "$PKG_MGR" in
-        apt-get) ( apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-        dnf|yum) ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-        apk)     ( pkg_install nodejs npm ) & progress_wait "Installing nodejs+npm" $! ;;
-        brew)    ( brew install node ) & progress_wait "Installing node" $! ;;
-      esac
-    else
-      ok "Node.js and npm are already installed"
-    fi
-    if command -v npm >/dev/null 2>&1; then
-      ( npm install -g pm2 >/dev/null 2>&1 || true ) & progress_wait "Installing pm2" $!
-    else
-      warn "npm is not available; pm2 could not be installed"
-    fi
-  fi
   local cfg; cfg="$(ls "$INSTALL_DIR"/nodes/um-*.json | head -1)"
-  if command -v pm2 >/dev/null 2>&1; then
-    pm2 delete um-node >/dev/null 2>&1 || true
-    pm2 start "$PYTHON_BIN" --name um-node --cwd "$INSTALL_DIR" --interpreter none -- "$INSTALL_DIR/um-node.py" run --config "$cfg"
-    pm2 save >/dev/null 2>&1 || true
-  else
-    ( cd "$INSTALL_DIR" && nohup "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" run --config "$cfg" >/tmp/um-node.log 2>&1 & )
-  fi
+  start_node_service "$cfg"
   ok "Node installed"
   node_status
 }
@@ -504,13 +582,7 @@ install_web(){
   ( "$PYTHON_BIN" -m pip install --quiet --upgrade flask flask-socketio python-socketio 2>/dev/null || true ) \
     & progress_wait "Installing Python packages" $!
   mkdir -p "$INSTALL_DIR/website/data"
-  if command -v pm2 >/dev/null 2>&1; then
-    pm2 delete um-web >/dev/null 2>&1 || true
-    pm2 start "$PYTHON_BIN" --name um-web --cwd "$INSTALL_DIR/website" --interpreter none -- app.py
-    pm2 save >/dev/null 2>&1 || true
-  else
-    ( cd "$INSTALL_DIR/website" && nohup "$PYTHON_BIN" app.py >/tmp/um-web.log 2>&1 & )
-  fi
+  start_web_service
   ok "Web installed"
   web_status
 }
