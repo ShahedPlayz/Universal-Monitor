@@ -517,7 +517,23 @@ EOF
 
 start_web_service(){
   if systemd_available; then
-    write_systemd_unit "um-web" "$PYTHON_BIN $INSTALL_DIR/website/app.py" "$INSTALL_DIR/website"
+    cat > "/etc/systemd/system/um-web.service" <<EOF
+[Unit]
+Description=Universal Monitor um-web
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/website
+ExecStart=$PYTHON_BIN $INSTALL_DIR/website/app.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=UM_WEB_PORT=8787
+
+[Install]
+WantedBy=multi-user.target
+EOF
     if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-web >/dev/null 2>&1; then
       ok "Web installed as a system systemd service"
       return 0

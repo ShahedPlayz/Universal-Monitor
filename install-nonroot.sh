@@ -489,6 +489,9 @@ ExecStart=$PY_RUN $INSTALL_DIR/um-node.py run --config $cfg
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
 EOF
     if [ -n "$PYTHONPATH_EXTRA" ]; then
       sed -i "s#^ExecStart=.*#ExecStart=env PYTHONPATH=$PYTHONPATH_EXTRA $PY_RUN $INSTALL_DIR/um-node.py run --config $cfg#" "$HOME/.config/systemd/user/um-node.service"
