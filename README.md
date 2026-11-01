@@ -30,7 +30,7 @@ The root installer downloads the project, installs system dependencies, creates 
 Use the dedicated no-root installer when you do not have sudo access. It never uses `sudo`, `apt`, `dnf`, `yum`, `apk`, `brew` or `pacman`, and installs everything under `~/.universal-monitor`:
 
 ```bash
-bash -c 'tmp=$(mktemp /tmp/.sgm-nonroot.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install-nonroot.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
+bash -c 'tmp=$(mktemp /tmp/.sgm-nonroot.XXXXXX.sh); trap "rm -f \"$tmp\"" EXIT INT TERM; curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/HEAD/install-nonroot.sh | tr -d "\r" > "$tmp"; bash "$tmp"'
 ```
 
 The no-root installer creates a user Python virtual environment, installs the web dependencies there, and manages the node and web processes with PID files. It does not install `btop` automatically; install it yourself if you want the BTOP page.
