@@ -572,7 +572,7 @@ install_node(){
     case "$ans" in y|Y) ;; *) warn "Aborted."; return 0;; esac
   fi
   stop_node >/dev/null 2>&1 || true
-  ensure_env || return 1
+  detect_env
   ( download_project ) & progress_wait "Downloading project" $!
   [ -f "$INSTALL_DIR/um-node.py" ] || { fail "um-node.py not found after download"; return 1; }
   mkdir -p "$NODES_DIR"
