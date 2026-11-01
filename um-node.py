@@ -17,6 +17,7 @@ import hmac
 import json
 import logging
 import os
+import glob
 import queue
 import platform
 import secrets
@@ -854,20 +855,25 @@ class ThermalSampler:
 
     def sample(self) -> dict[str, Any]:
         zones: list[dict[str, Any]] = []
-        try:
-            entries = sorted(os.listdir(THERMAL_DIR))
-        except OSError:
-            entries = []
-        for entry in entries:
-            if not entry.startswith("thermal_zone"):
-                continue
-            path = f"{THERMAL_DIR}/{entry}"
-            name = (read(f"{path}/type") or entry).strip()
-            raw = read(f"{path}/temp")
+        seen: set[str] = set()
+
+        def add_zone(name: str, label: str, raw: str | None) -> None:
+            nonlocal zones
             try:
                 temp = int((raw or "").strip()) / 1000.0
-            except ValueError:
+            except (TypeError, ValueError):
                 temp = None
+            if temp is not None and (temp < -100 or temp > 300):
+                # some sensors report in degrees already or are invalid; keep plausible values
+                if abs(temp) > 1000:
+                    try:
+                        temp = float((raw or "").strip()) / 1000.0
+                    except (TypeError, ValueError):
+                        temp = None
+            key = f"{name}:{label}:{temp}"
+            if key in seen:
+                return
+            seen.add(key)
             trend, delta = 0, 0.0
             if temp is not None:
                 previous = self._prev.get(name)
@@ -880,11 +886,60 @@ class ThermalSampler:
                 self._prev[name] = temp
             zones.append({
                 "name": name,
-                "label": _zone_label(name),
+                "label": label or name,
                 "temp": round1(temp),
                 "trend": trend,
                 "delta": round1(delta),
             })
+
+        # Kernel thermal zones
+        try:
+            entries = sorted(os.listdir(THERMAL_DIR))
+        except OSError:
+            entries = []
+        for entry in entries:
+            if not entry.startswith("thermal_zone"):
+                continue
+            path = f"{THERMAL_DIR}/{entry}"
+            name = (read(f"{path}/type") or entry).strip()
+            add_zone(name, _zone_label(name), read(f"{path}/temp"))
+
+        # Hardware monitoring sensors (CPU, GPU, NVMe, motherboard, etc.)
+        hwmon_dir = "/sys/class/hwmon"
+        try:
+            hw_entries = sorted(os.listdir(hwmon_dir))
+        except OSError:
+            hw_entries = []
+        for entry in hw_entries:
+            base = f"{hwmon_dir}/{entry}"
+            chip = (read(f"{base}/name") or entry).strip()
+            try:
+                files = sorted(os.listdir(base))
+            except OSError:
+                files = []
+            for filename in files:
+                if not (filename.startswith("temp") and filename.endswith("_input")):
+                    continue
+                index = filename[len("temp"):-len("_input")]
+                label = (read(f"{base}/temp{index}_label") or "").strip()
+                if not label:
+                    label = f"{chip} temp{index}"
+                add_zone(f"{chip}:{label}", label, read(f"{base}/{filename}"))
+
+        # DRM/GPU hwmon sensors exposed under graphics devices
+        for card in sorted(glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*")):
+            chip = (read(f"{card}/name") or "gpu").strip()
+            try:
+                files = sorted(os.listdir(card))
+            except OSError:
+                files = []
+            for filename in files:
+                if not (filename.startswith("temp") and filename.endswith("_input")):
+                    continue
+                index = filename[len("temp"):-len("_input")]
+                label = (read(f"{card}/temp{index}_label") or "").strip() or f"{chip} temp{index}"
+                add_zone(f"{chip}:{label}", label, read(f"{card}/{filename}"))
+
         temps = [z["temp"] for z in zones if z["temp"] is not None]
         hottest = max(zones, key=lambda z: z["temp"] if z["temp"] is not None else -999, default=None)
         return {
