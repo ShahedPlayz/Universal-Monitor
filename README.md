@@ -76,24 +76,6 @@ The no-root installer creates a user Python virtual environment, installs web de
 
 ---
 
-## Architecture
-
-```text
-Universal-Monitor/
-├── install.sh              # root installer and control TUI
-├── install-nonroot.sh      # no-root installer and control TUI
-├── um-node.py              # node agent
-├── website/
-│   ├── app.py              # Flask + Socket.IO control plane
-│   ├── templates/
-│   └── static/
-│       ├── app.js          # dashboard frontend
-│       └── style.css       # dashboard styles
-└── README.md
-```
-
----
-
 ## Power controls
 
 The agent reports whether reboot and shutdown are supported:
