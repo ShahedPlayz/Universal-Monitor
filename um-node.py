@@ -33,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_NODES_DIR = BASE_DIR / "nodes"
 PROC = "/proc"
@@ -73,6 +73,78 @@ def round1(value: float | None) -> float | None:
 
 def round2(value: float | None) -> float | None:
     return None if value is None else round(float(value), 2)
+
+
+def user_identity() -> tuple[str, str, bool]:
+    is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+    try:
+        import pwd
+        entry = pwd.getpwuid(os.geteuid())
+        return entry.pw_name, entry.pw_dir, is_root
+    except Exception:
+        home = os.environ.get("HOME") or os.path.expanduser("~")
+        return os.environ.get("USER") or "user", home, is_root
+
+
+def dir_ok(path: str | None) -> bool:
+    if not path:
+        return False
+    try:
+        return os.path.isdir(path) and os.access(path, os.R_OK | os.X_OK)
+    except OSError:
+        return False
+
+
+def safe_cwd(preferred: str | None, home: str) -> str:
+    for candidate in (preferred, home, "/tmp", "/"):
+        if candidate and dir_ok(candidate):
+            return candidate
+    return "/"
+
+
+def boot_id() -> str | None:
+    value = (read("/proc/sys/kernel/random/boot_id") or "").strip()
+    return value or None
+
+
+def _which(*names: str) -> str:
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+        for prefix in ("/usr/bin", "/bin", "/usr/sbin", "/sbin"):
+            candidate = os.path.join(prefix, name)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return ""
+
+
+def power_capabilities(machine_type: str = "") -> dict[str, Any]:
+    is_root = hasattr(os, "geteuid") and os.geteuid() == 0
+    container = machine_type == "Container"
+    systemd = os.path.isdir("/run/systemd/system")
+    systemctl = _which("systemctl")
+    shutdown = _which("shutdown")
+    reboot_cmd = _which("reboot")
+    poweroff_cmd = _which("poweroff")
+    can_reboot = bool(is_root and not container and ((systemd and systemctl) or shutdown or reboot_cmd))
+    can_shutdown = bool(is_root and not container and ((systemd and systemctl) or shutdown or poweroff_cmd))
+    if container:
+        reason = "Power actions are not available inside a container."
+    elif not is_root:
+        reason = "The agent is not running as root. Start it as root to allow reboot and shutdown."
+    elif not can_reboot and not can_shutdown:
+        reason = "No supported power command was found on this system."
+    else:
+        reason = "The agent can control power for this machine."
+    return {
+        "reboot": can_reboot,
+        "shutdown": can_shutdown,
+        "reason": reason,
+        "is_root": is_root,
+        "container": container,
+        "systemd": systemd,
+    }
 
 
 def find_free_port(host: str = "0.0.0.0") -> int:
@@ -844,9 +916,8 @@ class NodeState:
         self.gpu = GpuSampler()
         self.thermal = ThermalSampler()
         self.machine = machine_info()
-        self.cwd = os.environ.get("UM_TERMINAL_CWD") or "/root"
-        if not os.path.isdir(self.cwd):
-            self.cwd = str(Path.home())
+        self.user, self.home, self.is_root = user_identity()
+        self.cwd = safe_cwd(os.environ.get("UM_TERMINAL_CWD"), self.home)
         self.started_at = now_iso()
         self.pty_sessions = {}
         self.pty_lock = threading.Lock()
@@ -864,6 +935,11 @@ class NodeState:
                 "uptime": round1(uptime_seconds()),
                 "started_at": self.started_at,
                 "cwd": cwd,
+                "user": self.user,
+                "home": self.home,
+                "is_root": self.is_root,
+                "boot_id": boot_id(),
+                "power": power_capabilities(self.machine["type"]),
                 "device_model": self.machine["model"],
                 "device_vendor": self.machine["vendor"],
                 "device_type": self.machine["type"],
@@ -891,6 +967,11 @@ class NodeState:
                 "uptime": round1(uptime_seconds()),
                 "started_at": self.started_at,
                 "cwd": cwd,
+                "user": self.user,
+                "home": self.home,
+                "is_root": self.is_root,
+                "boot_id": boot_id(),
+                "power": power_capabilities(self.machine["type"]),
                 "kernel": platform.release(),
                 "machine": platform.machine(),
                 "cpu_model": cpu_model(),
@@ -915,23 +996,41 @@ class NodeState:
         if len(command) > 8000:
             return {"ok": False, "error": "Command is too long (max 8000 characters)"}
 
+        home = self.home
         with self.lock:
-            cwd = self.cwd
+            cwd = safe_cwd(self.cwd, home)
+            self.cwd = cwd
 
         # A bare ``cd`` is a terminal convenience: remember the directory for
         # the next command instead of losing it with the shell process.
         if command.startswith("cd ") and "&&" not in command and ";" not in command:
             target = command[3:].strip().strip("'\"")
-            target = os.path.expanduser(target)
+            if target in ("~", "~/"):
+                target = home
+            elif target.startswith("~/"):
+                target = os.path.join(home, target[2:])
+            else:
+                target = os.path.expanduser(target)
             new_cwd = target if os.path.isabs(target) else os.path.normpath(os.path.join(cwd, target))
-            if os.path.isdir(new_cwd):
+            if dir_ok(new_cwd):
                 with self.lock:
                     self.cwd = new_cwd
                 return {"ok": True, "stdout": "", "stderr": "", "exit_code": 0,
                         "duration_ms": 0, "cwd": new_cwd, "timed_out": False}
+            if os.path.isdir(new_cwd):
+                return {"ok": False, "error": f"cd: permission denied: {target}", "cwd": cwd}
+            if os.path.exists(new_cwd):
+                return {"ok": False, "error": f"cd: not a directory: {target}", "cwd": cwd}
             return {"ok": False, "error": f"cd: no such directory: {target}", "cwd": cwd}
 
         env = os.environ.copy()
+        env["HOME"] = home
+        env.setdefault("USER", self.user)
+        env.setdefault("LOGNAME", self.user)
+        env["PATH"] = f"{home}/.local/bin:{home}/bin:" + env.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+        config_home = env.get("XDG_CONFIG_HOME")
+        if not config_home or not os.access(config_home, os.W_OK):
+            env["XDG_CONFIG_HOME"] = os.path.join(home, ".config")
         env.setdefault("TERM", "xterm-256color")
         env["COLUMNS"] = "120"
         started = time.monotonic()
@@ -1007,6 +1106,15 @@ class NodeState:
         self._set_winsize(master, cols, rows)
         self._set_winsize(slave, cols, rows)
         env = os.environ.copy()
+        env["HOME"] = self.home
+        env.setdefault("USER", self.user)
+        env.setdefault("LOGNAME", self.user)
+        env["PATH"] = f"{self.home}/.local/bin:{self.home}/bin:" + env.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+        config_home = env.get("XDG_CONFIG_HOME")
+        if not config_home or not os.access(config_home, os.W_OK):
+            env["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
+        env["XDG_CACHE_HOME"] = os.path.join(self.home, ".cache")
+        env["XDG_DATA_HOME"] = os.path.join(self.home, ".local", "share")
         env.setdefault("TERM", "xterm-256color")
         env["COLUMNS"] = str(cols)
         env["LINES"] = str(rows)
@@ -1422,7 +1530,8 @@ class NodeHandler(BaseHTTPRequestHandler):
         threading.Thread(target=later, daemon=True).start()
         log.warning("power action requested: %s", action)
         self._send(200, {"ok": True, "message": f"{action.capitalize()} scheduled",
-                         "action": action, "time": now_iso()})
+                         "action": action, "time": now_iso(),
+                         "boot_id": boot_id(), "power": power_capabilities(self.state.machine["type"])})
 
 
 # --------------------------------------------------------------------------- #

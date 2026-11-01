@@ -155,8 +155,11 @@
     return String(address || "").replace(/^https?:\/\//i, "").replace(/\/$/, "");
   }
 
-  function shortCwd(cwd) {
+  function shortCwd(cwd, home) {
     if (!cwd) return "~";
+    const base = home || "/root";
+    if (cwd === base) return "~";
+    if (cwd.startsWith(base + "/")) return "~" + cwd.slice(base.length);
     return String(cwd).replace(/^\/root(?=\/|$)/, "~");
   }
 
@@ -1882,6 +1885,8 @@
                 <div class="info-item"><div class="info-label">Uptime</div><div class="info-value" id="ctl-uptime">—</div></div>
                 <div class="info-item"><div class="info-label">Last seen</div><div class="info-value" id="ctl-last">—</div></div>
                 <div class="info-item"><div class="info-label">Agent version</div><div class="info-value" id="ctl-version">—</div></div>
+                <div class="info-item"><div class="info-label">Reboot support</div><div class="info-value" id="ctl-reboot">—</div></div>
+                <div class="info-item"><div class="info-label">Shutdown support</div><div class="info-value" id="ctl-shutdown">—</div></div>
               </div>
             </div>
           </section>
@@ -1918,6 +1923,14 @@
         restoreButton(check);
       });
     }
+    (async () => {
+      try {
+        const pdata = await api(`/api/nodes/${encodeURIComponent(node.id)}/power`);
+        node.power = pdata.power || {};
+        if (state.snapshot && state.snapshot.node) state.snapshot.node.power = node.power;
+        updateControls(state.snapshot || { node: { power: node.power } }, node);
+      } catch (e) {}
+    })();
     state.view = {
       update: (data) => updateControls(data, node),
       redraw: () => { if (state.snapshot && state.view && state.view.update) state.view.update(state.snapshot); },
@@ -1936,6 +1949,9 @@
     setText("ctl-uptime", info.uptime != null ? fmtDuration(info.uptime) : "—");
     setText("ctl-last", node.last_seen ? timeAgo(node.last_seen) : "never");
     setText("ctl-version", info.version ? `v${info.version}` : "—");
+    const power = (info.power) || (getNode(state.currentNodeId) || node).power || {};
+    setText("ctl-reboot", power.reboot ? "Yes" : "No");
+    setText("ctl-shutdown", power.shutdown ? "Yes" : "No");
     updateHeaderStatus();
   }
 
@@ -1954,48 +1970,148 @@
       </div>
       <div class="modal-body">
         <div class="danger-box">
-          <strong>This is destructive.</strong> Type the node name <code>${escapeHtml(node.name)}</code> to confirm.
+          <strong>This is destructive.</strong> Confirm to ${escapeHtml(action)} this node.
         </div>
-        <form id="control-form" class="form-grid">
-          <label class="field">
-            <span class="confirm-label">Node name</span>
-            <input class="input mono" name="confirm_name" placeholder="${escapeHtml(node.name)}" autocomplete="off" spellcheck="false" required autofocus>
-          </label>
-          <div class="field-error" id="control-error"></div>
-          <div class="modal-foot" style="padding:0">
-            <button class="btn" type="button" data-close>Cancel</button>
-            <button class="btn btn-danger" type="submit" id="control-submit">${icon(isReboot ? "rotate" : "power", 15)} ${label}</button>
-          </div>
-        </form>
+        <div class="modal-foot" style="padding:0">
+          <button class="btn" type="button" data-close>Cancel</button>
+          <button class="btn btn-danger" type="button" id="control-submit">${icon(isReboot ? "rotate" : "power", 15)} ${label}</button>
+        </div>
       </div>`;
     openModal(html);
-    const form = document.getElementById("control-form");
-    const errorBox = document.getElementById("control-error");
     const submit = document.getElementById("control-submit");
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      errorBox.textContent = "";
-      const typed = String(new FormData(form).get("confirm_name") || "").trim();
-      if (typed !== node.name) {
-        errorBox.textContent = `Type “${node.name}” exactly to confirm.`;
+    if (submit) submit.addEventListener("click", async () => {
+      await runPowerAction(node, action, submit);
+    });
+  }
+
+  async function runPowerAction(node, action, submit) {
+    const isReboot = action === "reboot";
+    const token = isReboot ? "REBOOT" : "SHUTDOWN";
+    let power = node.power || {};
+    try {
+      const pdata = await api(`/api/nodes/${encodeURIComponent(node.id)}/power`);
+      power = pdata.power || power;
+      node.power = power;
+    } catch (e) {}
+    const supported = isReboot ? !!power.reboot : !!power.shutdown;
+    if (!supported) {
+      const reason = power.reason || "This VPS does not support this power action.";
+      openModal(`
+        <div class="modal-head">
+          <div class="modal-icon danger">${icon("x", 21)}</div>
+          <div style="flex:1">
+            <h2 class="modal-title">Not supported</h2>
+            <p class="modal-sub">${escapeHtml(reason)}</p>
+          </div>
+          <button class="modal-close" type="button" data-close aria-label="Close">${icon("x", 16)}</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          <div style="font-size:44px;line-height:1;color:var(--danger);animation:powerFail .45s ease">✕</div>
+          <h3 style="margin:12px 0 6px">${isReboot ? "Reboot unavailable" : "Shutdown unavailable"}</h3>
+          <p class="page-sub">${escapeHtml(isReboot ? "This VPS does not support reboot." : "This VPS does not support shutdown.")}</p>
+        </div>`);
+      setTimeout(closeModal, 2800);
+      return;
+    }
+
+    let previousBootId = null;
+    try {
+      const pdata = await api(`/api/nodes/${encodeURIComponent(node.id)}/power`);
+      previousBootId = pdata.boot_id || null;
+    } catch (e) {}
+
+    openModal(`
+      <div class="modal-head">
+        <div class="modal-icon danger">${icon(isReboot ? "rotate" : "power", 21)}</div>
+        <div style="flex:1">
+          <h2 class="modal-title">${isReboot ? "Rebooting" : "Shutting down"} ${escapeHtml(node.name)}</h2>
+          <p class="modal-sub">Please wait while the node responds.</p>
+        </div>
+      </div>
+      <div class="modal-body" style="text-align:center">
+        <div class="power-spinner"><span class="spin" style="display:inline-flex">${icon("refresh", 30)}</span></div>
+        <h3 id="power-status-text" style="margin:12px 0 6px">${isReboot ? "Sending reboot command…" : "Sending shutdown command…"}</h3>
+        <p class="page-sub" id="power-status-sub">${isReboot ? "Waiting for the node to come back online." : "Waiting for the node to stop responding."}</p>
+      </div>`);
+    if (submit) setButtonLoading(submit, isReboot ? "Rebooting…" : "Shutting down…");
+
+    try {
+      await api(`/api/nodes/${encodeURIComponent(node.id)}/control`, {
+        method: "POST",
+        body: JSON.stringify({ action, confirm: token }),
+      });
+    } catch (error) {
+      const text = document.getElementById("power-status-text");
+      if (text) text.textContent = "Failed";
+      toast(error.message, "error");
+      setTimeout(closeModal, 2000);
+      if (submit) restoreButton(submit);
+      return;
+    }
+
+    const statusText = document.getElementById("power-status-text");
+    if (statusText) statusText.textContent = isReboot ? "Rebooting…" : "Shutting down…";
+    node.last_status = "offline";
+    updateNodeStatuses([{ ...node }]);
+
+    const started = Date.now();
+    const timeoutMs = 120000;
+    let seenOffline = false;
+
+    const finishSuccess = (message) => {
+      const text = document.getElementById("power-status-text");
+      const sub = document.getElementById("power-status-sub");
+      if (text) text.textContent = message;
+      if (sub) sub.textContent = isReboot ? "The node came back to life." : "The node stopped responding.";
+      toast(`${node.name}: ${isReboot ? "successfully rebooted and came back to life" : "shut down"}`, "ok");
+      node.last_status = isReboot ? "online" : "offline";
+      updateNodeStatuses([{ ...node }]);
+      setTimeout(closeModal, 2400);
+      if (submit) restoreButton(submit);
+    };
+
+    const poll = async () => {
+      if (Date.now() - started > timeoutMs) {
+        const text = document.getElementById("power-status-text");
+        if (text) text.textContent = "Timed out";
+        toast(`${node.name}: ${action} timed out`, "error");
+        setTimeout(closeModal, 2000);
+        if (submit) restoreButton(submit);
         return;
       }
-      setButtonLoading(submit, isReboot ? "Rebooting…" : "Shutting down…");
       try {
-        const result = await api(`/api/nodes/${encodeURIComponent(node.id)}/control`, {
-          method: "POST",
-          body: JSON.stringify({ action, confirm: token }),
-        });
-        closeModal();
-        if (result.ok === false && result.error) toast(result.error, "error");
-        else toast(`${node.name}: ${action} command sent`, "ok");
-        node.last_status = "offline";
-        updateNodeStatuses([{ ...node }]);
+        const data = await api(`/api/nodes/${encodeURIComponent(node.id)}/check`, { method: "POST" });
+        const status = data.status || {};
+        const online = status.status === "online";
+        if (online) {
+          let currentBootId = null;
+          try {
+            const pdata = await api(`/api/nodes/${encodeURIComponent(node.id)}/power`);
+            currentBootId = pdata.boot_id || null;
+          } catch (e) {}
+          if (isReboot && (seenOffline || (previousBootId && currentBootId && currentBootId !== previousBootId))) {
+            finishSuccess("Successfully rebooted");
+            return;
+          }
+          seenOffline = false;
+        } else {
+          seenOffline = true;
+          if (!isReboot) {
+            finishSuccess("Shut down");
+            return;
+          }
+        }
       } catch (error) {
-        errorBox.textContent = error.message;
-        restoreButton(submit);
+        seenOffline = true;
+        if (!isReboot) {
+          finishSuccess("Shut down");
+          return;
+        }
       }
-    });
+      setTimeout(poll, 2000);
+    };
+
+    setTimeout(poll, isReboot ? 2000 : 1000);
   }
 
   // ------------------------------------------------------------------------
@@ -2148,6 +2264,8 @@
         historyIndex: -1,
         running: false,
         cwd: "/root",
+        username: "root",
+        home: "/root",
         hostname: "node",
         fontSize: Number(state.settings.terminal_font_size) || 13,
       };
@@ -2167,7 +2285,7 @@
         <div class="terminal">
           <div class="term-head">
             <div class="term-dots"><span class="term-dot red"></span><span class="term-dot yellow"></span><span class="term-dot green"></span></div>
-            <div class="term-title" id="term-title">root@${escapeHtml(term.hostname)} — bash</div>
+            <div class="term-title" id="term-title">${escapeHtml(term.username || "root")}@${escapeHtml(term.hostname)} — bash</div>
             <div class="term-tools">
               <button class="term-tool" type="button" data-term-tool="clear" title="Clear output">clear</button>
               <button class="term-tool" type="button" data-term-tool="font-down" title="Smaller text">A−</button>
@@ -2177,7 +2295,7 @@
           </div>
           <div class="term-body" id="term-body"></div>
           <div class="term-input-row" id="term-input-row">
-            <span class="term-prompt" id="term-prompt"><span class="p-host">root@${escapeHtml(term.hostname)}</span>:<span class="p-path">${escapeHtml(shortCwd(term.cwd))}</span>$</span>
+            <span class="term-prompt" id="term-prompt"><span class="p-host">${escapeHtml(term.username || "root")}@${escapeHtml(term.hostname)}</span>:<span class="p-path">${escapeHtml(shortCwd(term.cwd, term.home))}</span>$</span>
             <input class="term-input" id="term-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a command and press Enter…" aria-label="Command">
             <span class="term-status" id="term-status">ready</span>
           </div>
@@ -2242,10 +2360,12 @@
 
   function updateTerminal(data, term) {
     const info = data.node || {};
+    if (info.user) term.username = info.user;
+    if (info.home) term.home = info.home;
     if (info.hostname) term.hostname = info.hostname;
     if (info.cwd) term.cwd = info.cwd;
     const title = document.getElementById("term-title");
-    if (title) title.textContent = `root@${term.hostname} — bash`;
+    if (title) title.textContent = `${term.username || "root"}@${term.hostname} — bash`;
     updateTerminalPrompt(term);
     updateHeaderStatus();
   }
@@ -2253,7 +2373,7 @@
   function updateTerminalPrompt(term) {
     const prompt = document.getElementById("term-prompt");
     if (!prompt) return;
-    prompt.innerHTML = `<span class="p-host">root@${escapeHtml(term.hostname)}</span>:<span class="p-path">${escapeHtml(shortCwd(term.cwd))}</span>$`;
+    prompt.innerHTML = `<span class="p-host">${escapeHtml(term.username || "root")}@${escapeHtml(term.hostname)}</span>:<span class="p-path">${escapeHtml(shortCwd(term.cwd, term.home))}</span>$`;
   }
 
   function changeTerminalFont(term, delta) {
@@ -2263,7 +2383,7 @@
   }
 
   function promptText(term) {
-    return `root@${term.hostname}:${shortCwd(term.cwd)}$`;
+    return `${term.username || "root"}@${term.hostname}:${shortCwd(term.cwd, term.home)}$`;
   }
 
   function clearTerminal(term) {

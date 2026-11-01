@@ -30,7 +30,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.exceptions import HTTPException
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "um.db"
 
@@ -839,6 +839,21 @@ def api_node_control(node_id: str):
         return jsonify(ok=False, error=exc.message), exc.status
     socketio.emit("nodes_changed", {"action": "power", "node_id": node_id})
     return jsonify(result)
+
+
+@app.get("/api/nodes/<node_id>/power")
+def api_node_power(node_id: str):
+    node = get_node_raw(node_id)
+    if not node:
+        return jsonify(ok=False, error="Node not found"), 404
+    try:
+        health = node_request(node, "/api/health", timeout=4.0)
+    except NodeError as exc:
+        return jsonify(ok=False, error=exc.message), exc.status
+    info = health.get("node") or {}
+    return jsonify(ok=True, power=info.get("power") or {}, user=info.get("user"),
+                  home=info.get("home"), is_root=info.get("is_root"),
+                  boot_id=info.get("boot_id"))
 
 
 @app.get("/api/settings")
