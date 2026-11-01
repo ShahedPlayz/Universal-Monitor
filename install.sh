@@ -3,6 +3,12 @@
 #   curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install.sh | sudo bash
 set -euo pipefail
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This installer requires root. For a no-root install, use:" >&2
+  echo "  curl -fsSL https://raw.githubusercontent.com/ShahedPlayz/Universal-Monitor/main/install-nonroot.sh | bash" >&2
+  exit 1
+fi
+
 # Ensure interactive input works even when piped
 if [ ! -t 0 ]; then
   if [ -r /dev/tty ]; then exec 0</dev/tty; else echo "No TTY available"; exit 1; fi
