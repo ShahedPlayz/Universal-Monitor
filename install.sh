@@ -397,15 +397,22 @@ PY
 import json,sys;print(json.load(open(sys.argv[1])).get("api_key"))
 PY
 )"
-  local i
+  local i spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' idx=0
+  printf "  %bWiring up node port %s...%b " "$CYAN" "$port" "$NC" >&2
   for i in $(seq 1 15); do
+    printf "\r  %b%c%b Wiring up node port %s... (%d/15)" "$CYAN" "${spin:$idx:1}" "$NC" "$port" "$i" >&2
+    idx=$(( (idx+1) % ${#spin} ))
     if curl -s -H "X-API-Key: $key" "http://127.0.0.1:$port/api/health" >/dev/null 2>&1; then
-      ok "Node agent is online on port $port"
+      printf "\r  %b✔%b Node agent is online on port %s\033[K\n" "$GREEN" "$NC" "$port" >&2
       return 0
     fi
     sleep 1
   done
-  warn "Node agent is not responding on port $port"
+  printf "\r  %b✖%b Node agent is not responding on port %s\033[K\n" "$RED" "$NC" "$port" >&2
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl status um-node --no-pager -l 2>&1 | head -20 >&2 || true
+    journalctl -u um-node -n 20 --no-pager 2>&1 | tail -20 >&2 || true
+  fi
   if command -v systemctl >/dev/null 2>&1; then
     systemctl status um-node --no-pager -l 2>&1 | head -20 >&2 || true
     journalctl -u um-node -n 20 --no-pager 2>&1 | tail -20 >&2 || true
@@ -643,9 +650,24 @@ install_node(){
 
 uninstall_node(){
   ui_section "UNINSTALL NODE"
+  local ans=""; read_line ans "Uninstall node service and remove all node files? [y/N]: "
+  case "$ans" in y|Y) ;; *) warn "Aborted."; return 0;; esac
+  if systemd_available; then
+    systemctl disable --now um-node >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/um-node.service
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  if user_systemd_available; then
+    systemctl --user disable --now um-node >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/um-node.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+  fi
   pm2 delete um-node >/dev/null 2>&1 || true
+  if [ -f "$INSTALL_DIR/nodes/um-"*.json ]; then :; fi
   rm -f "$INSTALL_DIR"/nodes/um-*.json "$INSTALL_DIR"/nodes/*.runtime.json 2>/dev/null || true
-  ok "Node uninstalled"
+  rm -f /tmp/um-node*.pid /tmp/um-node*.json 2>/dev/null || true
+  rm -f "$INSTALL_DIR/um-node.py" 2>/dev/null || true
+  ok "Node service and files removed"
 }
 
 # ── web install / uninstall ──────────────────────────────────────────────
@@ -668,8 +690,25 @@ install_web(){
 
 uninstall_web(){
   ui_section "UNINSTALL WEB"
+  local ans=""; read_line ans "Uninstall web service and remove web files? [y/N]: "
+  case "$ans" in y|Y) ;; *) warn "Aborted."; return 0;; esac
+  if systemd_available; then
+    systemctl disable --now um-web >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/um-web.service
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  if user_systemd_available; then
+    systemctl --user disable --now um-web >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/um-web.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+  fi
   pm2 delete um-web >/dev/null 2>&1 || true
-  ok "Web uninstalled"
+  rm -f "$INSTALL_DIR"/website/*.pid 2>/dev/null || true
+  local ans2=""; read_line ans2 "Remove website files and data too? [y/N]: "
+  case "$ans2" in
+    y|Y) rm -rf "$INSTALL_DIR/website"; ok "Web service and files removed" ;;
+    *)   ok "Web service removed; files kept" ;;
+  esac
 }
 
 # ── menus ────────────────────────────────────────────────────────────────
