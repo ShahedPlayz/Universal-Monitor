@@ -65,7 +65,7 @@ read_line(){ # safe read even under pipefail
   printf -v "$__var" '%s' "$__in"
 }
 
-clear_screen(){ printf '\033[2J\033[H'; }
+clear_screen(){ printf '\033[2J\033[H\033[3J'; }
 
 banner(){
   clear_screen
@@ -176,22 +176,194 @@ download_project(){
 }
 
 # ── status helpers ───────────────────────────────────────────────────────
-gpu_info(){
-  if [ "$OS_KIND" = "linux" ]; then
-    if command -v nvidia-smi >/dev/null 2>&1; then
-      nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1 | tr -d '\n'
-    elif [ -d /dev/dri ]; then
-      ls /dev/dri 2>/dev/null | tr '\n' ' ' | sed 's/ $//'
-    else
-      echo "none detected"
-    fi
-  elif [ "$OS_KIND" = "macos" ]; then
-    system_profiler SPDisplaysDataType 2>/dev/null | grep -i "chipset\|model" | head -1 | sed 's/^ *//' || echo "unknown"
-  elif [ "$OS_KIND" = "windows" ]; then
-    echo "detect via Device Manager / WMI"
+human_bytes(){
+  local bytes="${1:-0}"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B"
   else
-    echo "unknown"
+    awk -v b="$bytes" 'BEGIN{
+      split("B KB MB GB TB PB",u," "); i=1;
+      while (b>=1024 && i<6) { b/=1024; i++ }
+      printf (b>=100 ? "%.0f %s" : b>=10 ? "%.1f %s" : "%.2f %s"), b, u[i]
+    }'
   fi
+}
+
+device_model(){
+  local f v
+  for f in /proc/device-tree/model /sys/firmware/devicetree/base/model            /sys/class/dmi/id/product_name /sys/class/dmi/id/board_name; do
+    [ -r "$f" ] || continue
+    v="$(tr -d '\000' < "$f" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+      ""|"to be filled by o.e.m."|"system product name"|"default string") continue ;;
+    esac
+    printf '%s' "$v"; return 0
+  done
+  printf ''
+}
+
+device_vendor(){
+  local f v
+  for f in /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/board_vendor; do
+    [ -r "$f" ] || continue
+    v="$(tr -d '\000' < "$f" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  done
+  printf ''
+}
+
+machine_type(){
+  local text
+  text="$(printf '%s %s %s %s' "$(device_model)" "$(device_vendor)" "$(uname -m)" "$(uname -n)" | tr '[:upper:]' '[:lower:]')"
+  if [ -f /.dockerenv ] || grep -qaE 'docker|lxc|kubepods' /proc/1/cgroup 2>/dev/null; then
+    echo "Container"; return
+  fi
+  if grep -qiE 'kvm|qemu|vmware|virtualbox|hyper-v|xen|bochs|virtual machine|openstack|digitalocean|linode' <<<"$text"; then
+    echo "Virtual Machine"; return
+  fi
+  if grep -qiE 'x96|tx3|tx5|tx6|tx9|tx20|tx 20|h96|h616|h618|s905|s912|s922|amlogic|allwinner|sun50i|tanix|beelink|minix|magicsee|ugoos|tv box|android box' <<<"$text"; then
+    echo "TV Box"; return
+  fi
+  if grep -qiE 'raspberry pi|orange pi|banana pi|rock pi|nanopi|odroid|radxa|khadas|pine64|tinker board|single board' <<<"$text"; then
+    echo "Single Board Computer"; return
+  fi
+  if grep -qiE 'laptop|notebook|thinkpad|ideapad' <<<"$text"; then
+    echo "Laptop"; return
+  fi
+  if grep -qiE 'server|poweredge|proliant|rack' <<<"$text"; then
+    echo "Server"; return
+  fi
+  if grep -qiE 'aarch64|armv7|armv6|arm64' <<<"$text"; then
+    echo "ARM Device"; return
+  fi
+  echo "Desktop"
+}
+
+machine_label(){
+  local model type
+  model="$(device_model)"; type="$(machine_type)"
+  [ -n "$model" ] || model="$(hostname)"
+  printf '%s (%s)' "$model" "$type"
+}
+
+node_display_name(){
+  local model
+  model="$(device_model)"
+  case "$(printf '%s' "$model" | tr '[:upper:]' '[:lower:]')" in
+    ""|*"to be filled"*|*"default string"*|*"system product"*) model="$(hostname)" ;;
+  esac
+  printf '%s' "$model"
+}
+
+cpu_label(){
+  local label part impl
+  label="$(awk -F: '/model name|^Hardware|^Processor/{gsub(/^[ \t]+|[ \t]+$/,"",$2); if ($2!=""){print $2; exit}}' /proc/cpuinfo 2>/dev/null || true)"
+  if [ -z "$label" ]; then
+    impl="$(awk -F: '/CPU implementer/{gsub(/[ \t]/,"",$2); print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+    part="$(awk -F: '/CPU part/{gsub(/[ \t]/,"",$2); print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+    case "$impl:$part" in
+      0x41:0xd03) label="ARM Cortex-A53" ;;
+      0x41:0xd04) label="ARM Cortex-A35" ;;
+      0x41:0xd05) label="ARM Cortex-A55" ;;
+      0x41:0xd07) label="ARM Cortex-A57" ;;
+      0x41:0xd08) label="ARM Cortex-A72" ;;
+      0x41:0xd09) label="ARM Cortex-A73" ;;
+      0x41:0xd0b) label="ARM Cortex-A76" ;;
+      0x41:0xd0d) label="ARM Cortex-A77" ;;
+      0x41:0xd41) label="ARM Cortex-A78" ;;
+      0x41:0xd44) label="ARM Cortex-X1" ;;
+      0x41:0xd46) label="ARM Cortex-A510" ;;
+      0x41:0xd47) label="ARM Cortex-A710" ;;
+      0x41:0xd48) label="ARM Cortex-X2" ;;
+      0x41:0xd4d) label="ARM Cortex-A715" ;;
+      0x41:0xd4e) label="ARM Cortex-X3" ;;
+      0x41:0xd80) label="ARM Cortex-A520" ;;
+      0x41:0xd81) label="ARM Cortex-A720" ;;
+      0x41:0xd82) label="ARM Cortex-X4" ;;
+    esac
+  fi
+  [ -n "$label" ] || label="$(uname -m) CPU"
+  printf '%s' "$label"
+}
+
+mem_info(){
+  local total avail used
+  total="$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  avail="$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  [ "${avail:-0}" -gt 0 ] || avail="$(awk '/^MemFree:/{print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  used=$(( total > avail ? total - avail : 0 ))
+  printf '%s / %s · %s available' "$(human_bytes $((used * 1024)))" "$(human_bytes $((total * 1024)))" "$(human_bytes $((avail * 1024)))"
+}
+
+disk_info(){
+  local total_k used_k avail_k total used avail
+  read -r total_k used_k avail_k < <(df -Pk / 2>/dev/null | awk 'NR==2{print $2, $3, $4}')
+  total=$(( ${total_k:-0} * 1024 ))
+  used=$(( ${used_k:-0} * 1024 ))
+  avail=$(( ${avail_k:-0} * 1024 ))
+  printf '%s / %s · %s available' "$(human_bytes "$used")" "$(human_bytes "$total")" "$(human_bytes "$avail")"
+}
+
+gpu_info(){
+  if [ "$OS_KIND" != "linux" ]; then
+    if [ "$OS_KIND" = "macos" ]; then
+      system_profiler SPDisplaysDataType 2>/dev/null | grep -i "chipset\|model" | head -1 | sed 's/^ *//' || echo "GPU does not exist"
+    else
+      echo "GPU does not exist"
+    fi
+    return
+  fi
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local nv
+    nv="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 | tr -d '\r')"
+    [ -n "$nv" ] && { echo "NVIDIA $nv"; return; }
+  fi
+  local name="" soc=""
+  if [ -r /proc/device-tree/compatible ]; then
+    soc="$(tr '\000' ' ' < /proc/device-tree/compatible 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  fi
+  case "$soc" in
+    *sun50i-h616*|*sun50i-h618*|*sun8i-h616*) name="ARM Mali-G31/G52" ;;
+    *sun50i-h6*) name="ARM Mali-T720" ;;
+    *sun50i-h5*|*sun8i-h3*) name="ARM Mali-450/400" ;;
+    *meson-g12a*) name="ARM Mali-G31" ;;
+    *meson-g12b*) name="ARM Mali-G52" ;;
+    *meson-gxm*) name="ARM Mali-T820" ;;
+    *rk3588*) name="ARM Mali-G610" ;;
+    *rk3566*|*rk3568*) name="ARM Mali-G52" ;;
+    *rk3399*) name="ARM Mali-T860" ;;
+    *rk3328*) name="ARM Mali-450" ;;
+    *bcm2711*) name="Broadcom VideoCore VI" ;;
+    *bcm283*) name="Broadcom VideoCore IV" ;;
+    *tegra*) name="NVIDIA Tegra" ;;
+    *qcom*|*msm*) name="Qualcomm Adreno" ;;
+  esac
+  if [ -z "$name" ] && command -v lspci >/dev/null 2>&1; then
+    name="$(lspci 2>/dev/null | grep -iE 'vga compatible|3d controller|display controller' | head -1 | sed -E 's/^[0-9a-fA-F:.]+[[:space:]]+(VGA compatible controller|3D controller|Display controller):[[:space:]]*//')"
+  fi
+  if [ -z "$name" ] && command -v rocm-smi >/dev/null 2>&1; then
+    name="$(rocm-smi --showproductname 2>/dev/null | grep -i 'card series' | head -1 | sed 's/.*: //')"
+  fi
+  if [ -z "$name" ] && [ -d /sys/class/drm ]; then
+    local d drv
+    for d in /sys/class/drm/card*/device/driver; do
+      [ -e "$d" ] || continue
+      drv="$(basename "$(readlink -f "$d")")"
+      name="GPU ($drv)"; break
+    done
+  fi
+  [ -n "$name" ] || name="GPU does not exist"
+  printf '%s' "$name"
+}
+
+env_panel(){
+  ui_section "DETECTED MACHINE"
+  ui_kv "Machine" "$(machine_label)"
+  ui_kv "Architecture" "$(uname -m)"
+  ui_kv "CPU" "$(cpu_label)"
+  ui_kv "GPU" "$(gpu_info)"
+  ui_kv "RAM" "$(mem_info)"
+  ui_kv "Disk /" "$(disk_info)"
 }
 
 node_status(){
@@ -224,7 +396,10 @@ PY
   else
     warn "Node agent is not responding on port $port"
   fi
+  ui_kv "Machine" "$(machine_label)"
   ui_kv "GPU" "$(gpu_info)"
+  ui_kv "RAM" "$(mem_info)"
+  ui_kv "Disk /" "$(disk_info)"
 }
 
 web_status(){
@@ -269,7 +444,7 @@ install_node(){
   fi
   mkdir -p "$INSTALL_DIR/nodes"
   rm -f "$INSTALL_DIR"/nodes/um-*.json "$INSTALL_DIR"/nodes/*.runtime.json 2>/dev/null || true
-  "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" create --name "$(hostname)" --host 0.0.0.0 --port 0 >/tmp/um-node-create.json
+  "$PYTHON_BIN" "$INSTALL_DIR/um-node.py" create --name "$(node_display_name)" --host 0.0.0.0 --port 0 >/tmp/um-node-create.json
   local NODE_ID; NODE_ID="$("$PYTHON_BIN" -c 'import json;print(json.load(open("/tmp/um-node-create.json"))["id"])')"
   ok "Created node config: $NODE_ID"
   # pm2 / node
@@ -376,6 +551,7 @@ web_menu(){
 main_menu(){
   while true; do
     clear_screen; banner
+    env_panel
     printf "  %b╭────────────────────────────────────────────────────────────╮%b\n" "$UI_BORDER" "$NC"
     printf "  %b│%b  %bUNIVERSAL MONITOR CONTROL PANEL%b\n" "$UI_BORDER" "$NC" "$UI_TEXT" "$NC"
     printf "  %b╰────────────────────────────────────────────────────────────╯%b\n\n" "$UI_BORDER" "$NC"
