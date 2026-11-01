@@ -14,27 +14,27 @@
 
 ---
 
-## Screenshots
+## 📸 Screenshots
 
 <p align="center">
   <img src="./2026-11-0111-03-52-ezgif.com-video-to-gif-converter.gif" width="96%" alt="Theme selection">
 </p>
 
 <p align="center">
-  <img src="./Screenshot_20261101_104940.png" width="48%" alt="Installer menu">
   <img src="./Screenshot_20261101_105054.jpg" width="48%" alt="Website menu">
+  <img src="./Screenshot_20261101_105957.png" width="48%" alt="Node page">
 </p>
 
 <p align="center">
-  <img src="./Screenshot_20261101_105957.png" width="48%" alt="Node page">
   <img src="./Screenshot_20261101_110738.png" width="48%" alt="Settings page">
+  <img src="./Screenshot_20261101_104940.png" width="32%" alt="Installer menu">
 </p>
 
 > Upload the attached screenshot files to the repository root with their original names to render these previews.
 
 ---
 
-## Features
+## ✨ Features
 
 - Real-time CPU, memory, disk, network, GPU, and thermal metrics over WebSocket
 - Interactive web terminal with persistent working directory
@@ -52,9 +52,9 @@
 
 ---
 
-## Installation
+## 🚀 Installation
 
-### Root installation
+### 🛡️ Root installation
 
 Run on a supported Linux VPS as root:
 
@@ -64,7 +64,7 @@ sudo bash -c 'tmp=$(mktemp /tmp/.sgm-installer.XXXXXX.sh); trap "rm -f \"$tmp\""
 
 The root installer downloads the project, installs dependencies, creates a stable node config, and starts services with pm2. It includes a TUI for installing the node, installing the web control plane, and checking status.
 
-### No-root installation
+### 👤 No-root installation
 
 Use this when you do not have sudo access. It never uses `sudo`, `apt`, `dnf`, `yum`, `apk`, `brew`, or `pacman`, and installs everything under `~/.universal-monitor`:
 
@@ -76,7 +76,7 @@ The no-root installer creates a user Python virtual environment, installs web de
 
 ---
 
-## Power controls
+## ⚡ Power controls
 
 The agent reports whether reboot and shutdown are supported:
 
@@ -89,7 +89,7 @@ The agent reports whether reboot and shutdown are supported:
 
 ---
 
-## Temperature monitoring
+## 🌡️ Temperature monitoring
 
 The agent scans:
 
@@ -101,6 +101,6 @@ Every readable sensor is reported to the website and displayed live.
 
 ---
 
-## License
+## 📜 License
 
 This project is proprietary software owned by SGM. You may not modify, redistribute, sublicense, or reverse engineer it without explicit written permission. See `LICENSE`.
