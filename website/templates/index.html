@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="{{ theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Universal Monitor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%236366f1'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M17 20v15a15 15 0 0 0 30 0V20' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div id="app" class="app-loading">
+    <div class="boot-screen">
+      <div class="boot-logo"><span></span><span></span><span></span></div>
+      <div class="boot-text">Universal Monitor</div>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root"></div>
+  <link rel="stylesheet" href="{{ url_for('static', filename='xterm.css') }}" onerror="this.href='https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css'">
+  <script src="{{ url_for('static', filename='xterm.min.js') }}"></script>
+  <script>if (!window.Terminal) document.write('<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"><\/script>');</script>
+  <script src="{{ url_for('static', filename='addon-fit.min.js') }}"></script>
+  <script>if (!window.FitAddon) document.write('<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"><\/script>');</script>
+  <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
+  <script>if (!window.io) document.write('<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"><\/script>');</script>
+  <script>window.__BOOT__ = {{ boot|tojson }};</script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
