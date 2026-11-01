@@ -498,6 +498,7 @@ EOF
     fi
     if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-node >/dev/null 2>&1; then
       ok "Node started as a user systemd service"
+      sleep 3
       return 0
     fi
     warn "user systemd failed; falling back to pm2/nohup"
@@ -561,6 +562,7 @@ EOF
     fi
     if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-web >/dev/null 2>&1; then
       ok "Web started as a user systemd service"
+      sleep 3
       return 0
     fi
     warn "user systemd failed; falling back to pm2/nohup"
@@ -615,11 +617,15 @@ PY
 import json,sys;print(json.load(open(sys.argv[1])).get("api_key"))
 PY
 )"
-  if node_http_ok "http://127.0.0.1:$port/api/health" "$key"; then
-    ok "Node agent is online on port $port"
-  else
-    warn "Node agent is not responding on port $port"
-  fi
+  local i
+  for i in $(seq 1 15); do
+    if node_http_ok "http://127.0.0.1:$port/api/health" "$key"; then
+      ok "Node agent is online on port $port"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "Node agent is not responding on port $port"
   ui_kv "Machine" "$(machine_label)"
   ui_kv "GPU" "$(gpu_info)"
   ui_kv "RAM" "$(mem_info)"

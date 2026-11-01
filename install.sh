@@ -397,10 +397,18 @@ PY
 import json,sys;print(json.load(open(sys.argv[1])).get("api_key"))
 PY
 )"
-  if curl -s -H "X-API-Key: $key" "http://127.0.0.1:$port/api/health" >/dev/null 2>&1; then
-    ok "Node agent is online on port $port"
-  else
-    warn "Node agent is not responding on port $port"
+  local i
+  for i in $(seq 1 15); do
+    if curl -s -H "X-API-Key: $key" "http://127.0.0.1:$port/api/health" >/dev/null 2>&1; then
+      ok "Node agent is online on port $port"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "Node agent is not responding on port $port"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl status um-node --no-pager -l 2>&1 | head -20 >&2 || true
+    journalctl -u um-node -n 20 --no-pager 2>&1 | tail -20 >&2 || true
   fi
   ui_kv "Machine" "$(machine_label)"
   ui_kv "GPU" "$(gpu_info)"
@@ -458,6 +466,7 @@ start_node_service(){
     write_systemd_unit "um-node" "$PYTHON_BIN $INSTALL_DIR/um-node.py run --config $cfg" "$INSTALL_DIR"
     if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-node >/dev/null 2>&1; then
       ok "Node installed as a system systemd service"
+      sleep 3
       return 0
     fi
     warn "system systemd failed; trying user systemd"
@@ -482,6 +491,7 @@ WantedBy=default.target
 EOF
     if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-node >/dev/null 2>&1; then
       ok "Node installed as a user systemd service"
+      sleep 3
       return 0
     fi
     warn "user systemd failed; falling back to pm2"
