@@ -1492,8 +1492,9 @@
     if (gpuPct != null) setKpiTone("kpi-gpu", gpuPct);
 
     const memPct = Number(mem.percent) || 0;
+    const memAvailable = mem.available != null ? mem.available : Math.max(0, Number(mem.total || 0) - Number(mem.used || 0));
     setText("kpi-mem", memPct.toFixed(0));
-    setText("kpi-mem-sub", `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)} · ${fmtBytes(mem.available)} available${mem.swap_total ? ` · swap ${Number(mem.swap_percent || 0).toFixed(0)}%` : ""}`);
+    setText("kpi-mem-sub", `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)} · ${fmtBytes(memAvailable)} available${mem.swap_total ? ` · swap ${Number(mem.swap_percent || 0).toFixed(0)}%` : ""}`);
     setKpiTone("kpi-mem", memPct);
 
     const totalRx = net.total_rx_bytes != null ? Number(net.total_rx_bytes) : Number(net.rx_bytes || 0);
@@ -1511,7 +1512,7 @@
     setText("chart-gpu-value", gpuPct == null ? "N/A" : `${gpuPct.toFixed(0)}%`);
     setText("chart-gpu-detail", gpuName);
     setText("chart-mem-value", `${memPct.toFixed(0)}%`);
-    setText("chart-mem-detail", `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)} · ${fmtBytes(mem.available)} available`);
+    setText("chart-mem-detail", `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)} · ${fmtBytes(memAvailable)} available`);
     setText("chart-data-value", `↓ ${fmtBytes(totalRx)} · ↑ ${fmtBytes(totalTx)}`);
     setText("data-total-down", fmtBytes(totalRx));
     setText("data-total-up", fmtBytes(totalTx));
