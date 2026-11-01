@@ -428,6 +428,10 @@ systemd_available(){
   command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
 }
 
+user_systemd_available(){
+  command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1
+}
+
 write_systemd_unit(){
   local name="$1" exec_start="$2" workdir="$3"
   cat > "/etc/systemd/system/${name}.service" <<EOF
@@ -453,10 +457,34 @@ start_node_service(){
   if systemd_available; then
     write_systemd_unit "um-node" "$PYTHON_BIN $INSTALL_DIR/um-node.py run --config $cfg" "$INSTALL_DIR"
     if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-node >/dev/null 2>&1; then
-      ok "Node installed as a systemd service"
+      ok "Node installed as a system systemd service"
       return 0
     fi
-    warn "systemd failed; falling back to pm2"
+    warn "system systemd failed; trying user systemd"
+  fi
+  if user_systemd_available; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/um-node.service" <<EOF
+[Unit]
+Description=Universal Monitor um-node
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$PYTHON_BIN $INSTALL_DIR/um-node.py run --config $cfg
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
+EOF
+    if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-node >/dev/null 2>&1; then
+      ok "Node installed as a user systemd service"
+      return 0
+    fi
+    warn "user systemd failed; falling back to pm2"
   fi
   if ! command -v pm2 >/dev/null 2>&1; then
     info "Installing pm2..."
@@ -491,10 +519,35 @@ start_web_service(){
   if systemd_available; then
     write_systemd_unit "um-web" "$PYTHON_BIN $INSTALL_DIR/website/app.py" "$INSTALL_DIR/website"
     if systemctl daemon-reload >/dev/null 2>&1 && systemctl enable --now um-web >/dev/null 2>&1; then
-      ok "Web installed as a systemd service"
+      ok "Web installed as a system systemd service"
       return 0
     fi
-    warn "systemd failed; falling back to pm2"
+    warn "system systemd failed; trying user systemd"
+  fi
+  if user_systemd_available; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/um-web.service" <<EOF
+[Unit]
+Description=Universal Monitor um-web
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/website
+ExecStart=$PYTHON_BIN $INSTALL_DIR/website/app.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=UM_WEB_PORT=8787
+
+[Install]
+WantedBy=default.target
+EOF
+    if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-web >/dev/null 2>&1; then
+      ok "Web installed as a user systemd service"
+      return 0
+    fi
+    warn "user systemd failed; falling back to pm2"
   fi
   if ! command -v pm2 >/dev/null 2>&1; then
     info "Installing pm2..."

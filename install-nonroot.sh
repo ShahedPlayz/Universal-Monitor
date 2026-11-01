@@ -465,11 +465,40 @@ node_http_ok(){
   fi
 }
 
+
+user_systemd_available(){
+  command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1
+}
+
 start_node(){
   local cfg; cfg="$(find_node_config)" || { warn "No node config. Install Node first."; return 1; }
   stop_pidfile "$RUN_DIR/um-node.pid" "node"
   mkdir -p "$LOG_DIR" "$RUN_DIR"
   info "Starting node..."
+  if user_systemd_available; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/um-node.service" <<EOF
+[Unit]
+Description=Universal Monitor um-node
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$PY_RUN $INSTALL_DIR/um-node.py run --config $cfg
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+EOF
+    if [ -n "$PYTHONPATH_EXTRA" ]; then
+      sed -i "s#^ExecStart=.*#ExecStart=env PYTHONPATH=$PYTHONPATH_EXTRA $PY_RUN $INSTALL_DIR/um-node.py run --config $cfg#" "$HOME/.config/systemd/user/um-node.service"
+    fi
+    if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-node >/dev/null 2>&1; then
+      ok "Node started as a user systemd service"
+      return 0
+    fi
+    warn "user systemd failed; falling back to pm2/nohup"
+  fi
   if command -v pm2 >/dev/null 2>&1; then
     pm2 delete um-node >/dev/null 2>&1 || true
     if [ -n "$PYTHONPATH_EXTRA" ]; then
@@ -505,6 +534,34 @@ start_web(){
   stop_pidfile "$RUN_DIR/um-web.pid" "web"
   mkdir -p "$LOG_DIR" "$RUN_DIR" "$INSTALL_DIR/website/data"
   info "Starting web on port $WEB_PORT..."
+  if user_systemd_available; then
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/um-web.service" <<EOF
+[Unit]
+Description=Universal Monitor um-web
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/website
+ExecStart=$PY_RUN $INSTALL_DIR/website/app.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=UM_WEB_PORT=$WEB_PORT
+
+[Install]
+WantedBy=default.target
+EOF
+    if [ -n "$PYTHONPATH_EXTRA" ]; then
+      sed -i "s#^ExecStart=.*#ExecStart=env PYTHONPATH=$PYTHONPATH_EXTRA $PY_RUN $INSTALL_DIR/website/app.py#" "$HOME/.config/systemd/user/um-web.service"
+    fi
+    if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now um-web >/dev/null 2>&1; then
+      ok "Web started as a user systemd service"
+      return 0
+    fi
+    warn "user systemd failed; falling back to pm2/nohup"
+  fi
   if command -v pm2 >/dev/null 2>&1; then
     pm2 delete um-web >/dev/null 2>&1 || true
     if [ -n "$PYTHONPATH_EXTRA" ]; then
