@@ -5,7 +5,7 @@ set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "This installer requires root. For a no-root install, use:" >&2
-  echo "  curl -fsSL https://github.com/ShahedPlayz/Universal-Monitor/raw/main/install-nonroot.sh | bash" >&2
+  echo "  curl -fsSL https://github.com/ShahedPlayz/Universal-Monitor/raw/HEAD/install-nonroot.sh | bash" >&2
   exit 1
 fi
 
