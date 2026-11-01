@@ -17,6 +17,10 @@
 ## Screenshots
 
 <p align="center">
+  <img src="./2026-11-0111-03-52-ezgif.com-video-to-gif-converter.gif" width="96%" alt="Theme selection">
+</p>
+
+<p align="center">
   <img src="./Screenshot_20261101_104940.png" width="48%" alt="Installer menu">
   <img src="./Screenshot_20261101_105054.jpg" width="48%" alt="Website menu">
 </p>
@@ -24,10 +28,6 @@
 <p align="center">
   <img src="./Screenshot_20261101_105957.png" width="48%" alt="Node page">
   <img src="./Screenshot_20261101_110738.png" width="48%" alt="Settings page">
-</p>
-
-<p align="center">
-  <img src="./2026-11-0111-03-52-ezgif.com-video-to-gif-converter.gif" width="96%" alt="Theme selection">
 </p>
 
 > Upload the attached screenshot files to the repository root with their original names to render these previews.
